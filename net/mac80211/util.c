@@ -4403,6 +4403,7 @@ int ieee80211_check_combinations_ext(struct ieee80211_sub_if_data *sdata,
 		.radio_idx = data->radio_idx,
 	};
 	int total;
+	int ret;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -4457,7 +4458,10 @@ int ieee80211_check_combinations_ext(struct ieee80211_sub_if_data *sdata,
 	if (total == 1 && !params.radar_detect)
 		return 0;
 
-	return cfg80211_check_combinations(local->hw.wiphy, &params);
+	ret = cfg80211_check_combinations(local->hw.wiphy, &params);
+	if (!ret)
+		sdata_info(sdata, "ieee80211_check_combinations:  cfg80211-check-combinations failed: %d\n", ret);
+	return ret;
 }
 
 static void
