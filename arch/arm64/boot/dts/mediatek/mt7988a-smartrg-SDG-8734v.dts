@@ -190,6 +190,7 @@
 
 /* 10G SFP+ */
 &gmac1 {
+	label = "wan";
 	sfp = <&sfp1>;
 	managed = "in-band-status";
 	phy-mode = "usxgmii";
@@ -198,6 +199,7 @@
 
 /* 10G RF45 */
 &gmac2 {
+	label = "lan1";
 	managed = "in-band-status";
 	phy-mode = "usxgmii";
 	phy-connection-type = "usxgmii";
@@ -290,7 +292,19 @@
 };
 
 &gsw_port0 {
-	label = "wan";
+	status = "disabled";
+};
+
+&gsw_port1 {
+	label = "lan2";
+};
+
+&gsw_port2 {
+	label = "lan3";
+};
+
+&gsw_port3 {
+	label = "lan4";
 };
 
 &gsw_phy0_led0 {
