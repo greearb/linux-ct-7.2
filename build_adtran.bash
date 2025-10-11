@@ -10,6 +10,9 @@ KVER_PKG=$VERSION.$PATCHLEVEL.$SUBLEVEL$EXTRAVERSION+
 export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
 
+# Ensure build date updates
+touch kernel/cpu.c
+
 make -j32 || exit 1
 
 dst="adtran-w7"
