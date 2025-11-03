@@ -2,7 +2,11 @@
 
 /dts-v1/;
 
-#include "mt7988a-bananapi-bpi-r4.dtsi"
+//#include "mt7988a-bananapi-bpi-r4.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/regulator/richtek,rt5190a-regulator.h>
+
+#include "mt7988a.dtsi"
 
 / {
 	compatible = "bananapi,bpi-r4-2g5", "bananapi,bpi-r4", "mediatek,mt7988a";
