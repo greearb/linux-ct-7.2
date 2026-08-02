@@ -3005,7 +3005,7 @@ static u32 sta_estimate_expected_throughput(struct sta_info *sta,
 	u32 duration;
 	u8 band;
 
-	conf = rcu_dereference(bss_conf->chanctx_conf);
+	conf = sdata_dereference(bss_conf->chanctx_conf, sta->sdata);
 	if (!conf)
 		return 0;
 	band = conf->def.chan->band;
