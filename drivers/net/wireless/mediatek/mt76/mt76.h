@@ -266,6 +266,8 @@ struct mt76_queue {
 	dma_addr_t desc_dma;
 	struct sk_buff *rx_head;
 	struct page_pool *page_pool;
+
+	unsigned long stopped_at; /* in jiffies */
 };
 
 struct mt76_mcu_ops {
@@ -1866,6 +1868,7 @@ void mt76_release_buffered_frames(struct ieee80211_hw *hw,
 				  bool more_data);
 void mt76_sta_ps_transition(struct mt76_dev *dev, struct mt76_wcid *wcid,
 			    bool ps);
+bool mt76_txq_stopped(struct mt76_queue *q);
 bool mt76_has_tx_pending(struct mt76_phy *phy);
 int mt76_update_channel(struct mt76_phy *phy);
 void mt76_update_survey(struct mt76_phy *phy);
