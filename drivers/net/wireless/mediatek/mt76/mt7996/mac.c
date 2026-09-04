@@ -1933,13 +1933,15 @@ next:
 				cur_info++;
 			continue;
 		} else if (info & MT_TXFREE_INFO_HEADER) {
+			u32 count;
+
 			if (!wcid)
 				continue;
 
 			tx_status = FIELD_GET(MT_TXFREE_INFO_STAT, info);
-			tx_retries =
-				FIELD_GET(MT_TXFREE_INFO_COUNT, info) - 1;
-			tx_failed = !!tx_status;
+			count = FIELD_GET(MT_TXFREE_INFO_COUNT, info);
+			tx_retries = count ? count - 1 : 0;
+			tx_failed = tx_retries + !!tx_status;
 
 			wcid->stats.tx_retries += tx_retries;
 			wcid->stats.tx_failed += tx_failed;
@@ -1957,6 +1959,19 @@ next:
 			if (!txwi) {
 				WARN_ON_ONCE(1);
 				continue;
+			}
+
+			/* More educated tx_status guess, if possible */
+			if (txwi->skb) {
+				struct mt76_tx_cb *cb = mt76_tx_skb_cb(txwi->skb);
+				struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(txwi->skb);
+
+				/* More informed case, we have already done txs work previously */
+				if ((cb->flags & MT_TX_CB_TXS_DONE)) {
+					tx_status = (tx_info->flags & IEEE80211_TX_STAT_ACK)
+						  ? 0 /* Previously ack'd, probably ok */
+						  : 1; /* No ack, probably fail */
+				}
 			}
 
 			if (WARN_ON_ONCE(time_is_before_jiffies(txwi->jiffies + HZ))) {
