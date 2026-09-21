@@ -1467,7 +1467,6 @@ iwl_mld_set_rx_nonlegacy_rate_info(struct iwl_mld *mld,
 
 	mld->ethtool_stats.rx_nss[0]++;
 	mld->ethtool_stats.rx_mcs[rx_status->rate_idx]++;
-	rx_status->nss = 1;
 }
 
 static void iwl_mld_set_rx_rate(struct iwl_mld *mld,
@@ -1492,6 +1491,7 @@ static void iwl_mld_set_rx_rate(struct iwl_mld *mld,
 
 		/* override BW - it could be DUP and indicate the wrong BW */
 		rx_status->bw = RATE_INFO_BW_20;
+		rx_status->nss = 1;
 
 		/* valid rate */
 		if (rate >= 0 && rate <= 0xFF) {
