@@ -2026,7 +2026,6 @@ mt7996_mac_add_txs_skb(struct mt7996_dev *dev, struct mt76_wcid *wcid,
 	bool cck = false;
 	u32 txrate, txs, mode, stbc;
 	u32 mcs_idx = 0;
-	u8 bw;
 
 	txs = le32_to_cpu(txs_data[0]);
 
@@ -2114,6 +2113,10 @@ mt7996_mac_add_txs_skb(struct mt7996_dev *dev, struct mt76_wcid *wcid,
 		if (rate.mcs > 31)
 			goto out;
 
+		rate.flags = RATE_INFO_FLAGS_MCS;
+		if (wcid->rate.flags & RATE_INFO_FLAGS_SHORT_GI)
+			rate.flags |= RATE_INFO_FLAGS_SHORT_GI;
+
 		if (info) {
 			info->status.rates[0].idx = rate.mcs;
 			info->status.rates[0].flags |= IEEE80211_TX_RC_MCS;
@@ -2123,6 +2126,10 @@ mt7996_mac_add_txs_skb(struct mt7996_dev *dev, struct mt76_wcid *wcid,
 	case MT_PHY_TYPE_VHT:
 		if (rate.mcs > 9)
 			goto out;
+
+		rate.flags = RATE_INFO_FLAGS_VHT_MCS;
+		if (wcid->rate.flags & RATE_INFO_FLAGS_SHORT_GI)
+			rate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 
 		if (info) {
 			info->status.rates[0].idx = (rate.nss << 4) | rate.mcs;
@@ -2136,6 +2143,10 @@ mt7996_mac_add_txs_skb(struct mt7996_dev *dev, struct mt76_wcid *wcid,
 		if (rate.mcs > 11)
 			goto out;
 
+		rate.he_gi = wcid->rate.he_gi;
+		rate.he_dcm = FIELD_GET(MT_TX_RATE_DCM, txrate);
+		rate.flags = RATE_INFO_FLAGS_HE_MCS;
+
 		if (info)
 			info->status.rates[0].idx = (rate.nss << 4) | rate.mcs;
 		break;
@@ -2144,6 +2155,9 @@ mt7996_mac_add_txs_skb(struct mt7996_dev *dev, struct mt76_wcid *wcid,
 	case MT_PHY_TYPE_EHT_MU:
 		if (rate.mcs > 13)
 			goto out;
+
+		rate.eht_gi = wcid->rate.eht_gi;
+		rate.flags = RATE_INFO_FLAGS_EHT_MCS;
 
 		if (info)
 			info->status.rates[0].idx = (rate.nss << 4) | rate.mcs;
@@ -2154,9 +2168,30 @@ mt7996_mac_add_txs_skb(struct mt7996_dev *dev, struct mt76_wcid *wcid,
 
 	stats->tx_mcs[mcs_idx]++;
 	stats->tx_mode[mode]++;
-	bw = FIELD_GET(MT_TXS0_BW, txs);
-	if (bw < ARRAY_SIZE(stats->tx_bw))
-		stats->tx_bw[bw]++;
+
+	switch (FIELD_GET(MT_TXS0_BW, txs)) {
+		case IEEE80211_STA_RX_BW_320:
+			rate.bw = RATE_INFO_BW_320;
+			stats->tx_bw[4]++;
+			break;
+		case IEEE80211_STA_RX_BW_160:
+			rate.bw = RATE_INFO_BW_160;
+			stats->tx_bw[3]++;
+			break;
+		case IEEE80211_STA_RX_BW_80:
+			rate.bw = RATE_INFO_BW_80;
+			stats->tx_bw[2]++;
+			break;
+		case IEEE80211_STA_RX_BW_40:
+			rate.bw = RATE_INFO_BW_40;
+			stats->tx_bw[1]++;
+			break;
+		default:
+			rate.bw = RATE_INFO_BW_20;
+			stats->tx_bw[0]++;
+			break;
+	}
+	wcid->rate = rate;
 
 out:
 	if (skb)
