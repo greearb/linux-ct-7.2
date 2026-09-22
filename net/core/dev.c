@@ -7745,7 +7745,8 @@ void __netif_napi_del_locked(struct napi_struct *napi)
 		return;
 
 	/* Make sure NAPI is disabled (or was never enabled). */
-	WARN_ON(!test_bit(NAPI_STATE_SCHED, &napi->state));
+	if (WARN_ON(!test_bit(NAPI_STATE_SCHED, &napi->state)))
+		pr_err("NAPI %px enabled during delete.\n", napi);
 
 	if (test_and_clear_bit(NAPI_STATE_HAS_NOTIFIER, &napi->state))
 		irq_set_affinity_notifier(napi->irq, NULL);
