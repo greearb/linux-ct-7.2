@@ -675,7 +675,6 @@ void mt7996_vif_link_remove(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 
 			mvif->mt76.deflink_id = IEEE80211_LINK_UNSPECIFIED;
 			mtxq = (struct mt76_txq *)vif->txq->drv_priv;
-			mvif->mt76.valid_links &= ~BIT(link_id);
 			/* Primary link will be removed, look for a new one */
 			for_each_vif_active_link(vif, iter, link_id) {
 				if (link_id == msta_link->wcid.link_id)
