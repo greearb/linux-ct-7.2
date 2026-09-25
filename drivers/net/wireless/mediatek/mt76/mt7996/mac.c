@@ -1434,6 +1434,13 @@ int mt7996_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 	if (unlikely(tx_info->skb->len <= ETH_HLEN))
 		return -EINVAL;
 
+	if (WARN_ON_ONCE(!msta)) {
+		mt76_dbg(mdev, MT76_DBG_WRN,
+			 "%s: msta not found! ieee82011_sta: %px, ieee80211_vif: %px, mt7996_vif: %px\n",
+			 __func__, sta, vif, mvif);
+		return -EINVAL;
+	}
+
 	if (!wcid) {
 		wcid = &dev->mt76.global_wcid;
 		if (unlikely(WARN_ON_ONCE(IS_NON_CANONICAL(wcid)))) {
