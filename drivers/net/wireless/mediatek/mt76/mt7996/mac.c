@@ -1424,13 +1424,6 @@ int mt7996_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 	if (unlikely(tx_info->skb->len <= ETH_HLEN))
 		return -EINVAL;
 
-	if (WARN_ON_ONCE(!msta)) {
-		mt76_dbg(mdev, MT76_DBG_WRN,
-			 "%s: msta not found! ieee82011_sta: %px, ieee80211_vif: %px, mt7996_vif: %px\n",
-			 __func__, sta, vif, mvif);
-		return -EINVAL;
-	}
-
 	if (!wcid) {
 		wcid = &dev->mt76.global_wcid;
 		if (unlikely(WARN_ON_ONCE(IS_NON_CANONICAL(wcid)))) {
@@ -1448,6 +1441,13 @@ int mt7996_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 	if ((is_8023 || ieee80211_is_data_qos(hdr->frame_control)) && sta->mlo &&
 	    likely(tx_info->skb->protocol != cpu_to_be16(ETH_P_PAE))) {
 		u8 tid = tx_info->skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+
+		if (WARN_ON_ONCE(!msta)) {
+			mt76_dbg(mdev, MT76_DBG_WRN,
+				 "%s: msta not found! ieee82011_sta: %px, ieee80211_vif: %px, mt7996_vif: %px\n",
+				 __func__, sta, vif, mvif);
+			return -EINVAL;
+		}
 
 		link_id = (tid % 2) ? msta->seclink_id : msta->deflink_id;
 	} else {
