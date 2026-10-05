@@ -1465,7 +1465,7 @@ iwl_mld_set_rx_nonlegacy_rate_info(struct iwl_mld *mld,
 	if (rate_n_flags & RATE_MCS_LDPC_MSK)
 		rx_status->enc_flags |= RX_ENC_FLAG_LDPC;
 
-	mld->ethtool_stats.rx_nss[0]++;
+	mld->ethtool_stats.rx_nss[rx_status->nss - 1]++;
 	mld->ethtool_stats.rx_mcs[rx_status->rate_idx]++;
 }
 
