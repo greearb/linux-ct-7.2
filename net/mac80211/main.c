@@ -500,7 +500,12 @@ static void ieee80211_restart_work(struct work_struct *work)
 	struct ieee80211_sub_if_data *sdata;
 	int ret;
 
-	flush_workqueue(local->workqueue);
+	if (local->workqueue) {
+		flush_workqueue(local->workqueue);
+	} else {
+		pr_err("ERROR:  local workqueue is NULL in restart_work, local: %px\n", local);
+		WARN_ON_ONCE(1);
+	}
 
 	rtnl_lock();
 	/* we might do interface manipulations, so need both */
@@ -1731,6 +1736,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
  fail_flows:
 	ieee80211_led_exit(local);
 	destroy_workqueue(local->workqueue);
+	local->workqueue = NULL;
  fail_workqueue:
 	kfree(local->int_scan_req);
 	return result;
@@ -1783,6 +1789,7 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 
 	wiphy_unregister(local->hw.wiphy);
 	destroy_workqueue(local->workqueue);
+	local->workqueue = NULL;
 	ieee80211_led_exit(local);
 	kfree(local->int_scan_req);
 }
