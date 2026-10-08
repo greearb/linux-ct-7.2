@@ -233,6 +233,10 @@ int iwl_acpi_get_dsm(struct iwl_fw_runtime *fwrt,
 	if (iwlwifi_mod_params.dsm_override[func] > 0) {
 		*value = iwlwifi_mod_params.dsm_override[func];
 		IWL_DEBUG_RADIO(fwrt, "Loaded DSM func %d from mod param: %d\n", func, *value);
+		if (fwrt->dsm_source == BIOS_SOURCE_NONE) {
+			fwrt->dsm_source = BIOS_SOURCE_ACPI;
+			fwrt->dsm_revision = ACPI_DSM_REV;
+		}
 		return 0;
 	}
 
