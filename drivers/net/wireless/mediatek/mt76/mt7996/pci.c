@@ -53,7 +53,7 @@ out:
 	return hif;
 }
 
-void mt7996_put_hif2(struct mt7996_dev *dev, struct mt7996_hif *hif)
+static void mt7996_put_hif2(struct mt7996_dev *dev, struct mt7996_hif *hif)
 {
 	struct pci_dev *hif2_dev;
 
@@ -245,6 +245,7 @@ static void mt7996_pci_remove(struct pci_dev *pdev)
 
 	mdev = pci_get_drvdata(pdev);
 	dev = container_of(mdev, struct mt7996_dev, mt76);
+	mt7996_put_hif2(dev, dev->hif2);
 	mt7996_unregister_device(dev);
 }
 

@@ -1884,8 +1884,6 @@ static void mt7996_cleanup_irqs(struct mt7996_dev *dev)
 	struct mt76_dev *mdev = &dev->mt76;
 	struct pci_dev *pdev = to_pci_dev(mdev->dev);
 
-	mt7996_put_hif2(dev, dev->hif2); /* frees hif2 irq */
-
 	devm_free_irq(mdev->dev, pdev->irq, dev);
 	if (!mtk_wed_device_active(&dev->mt76.mmio.wed))
 		pci_free_irq_vectors(pdev);
