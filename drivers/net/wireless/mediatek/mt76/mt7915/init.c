@@ -1217,12 +1217,24 @@ static void mt7915_unregister_ext_phy(struct mt7915_dev *dev)
 	ieee80211_free_hw(mphy->hw);
 }
 
+static void mt7915_cleanup_irqs(struct mt7915_dev *dev)
+{
+	struct mt76_dev *mdev = &dev->mt76;
+	struct pci_dev *pdev = to_pci_dev(mdev->dev);
+
+	devm_free_irq(mdev->dev, pdev->irq, dev);
+	if (!mtk_wed_device_active(&dev->mt76.mmio.wed))
+		pci_free_irq_vectors(pdev);
+}
+
 static void mt7915_stop_hardware(struct mt7915_dev *dev)
 {
 	mt7915_mcu_exit(dev);
 	mt76_connac2_tx_token_put(&dev->mt76, &dev->phy.mib);
 	mt7915_dma_cleanup(dev);
-	tasklet_disable(&dev->mt76.irq_tasklet);
+	tasklet_kill(&dev->mt76.irq_tasklet);
+
+	mt7915_cleanup_irqs(dev);
 
 	if (is_mt798x(&dev->mt76))
 		mt7986_wmac_disable(dev);
