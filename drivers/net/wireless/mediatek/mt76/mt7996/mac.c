@@ -687,7 +687,6 @@ mt7996_mac_fill_rx(struct mt7996_dev *dev, enum mt76_rxq_id q,
 	if (rxd1 & MT_RXD1_NORMAL_GROUP_3) {
 		u32 v3;
 		int ret;
-		int i;
 		u8 nss;
 
 		rxv = rxd;
@@ -699,6 +698,7 @@ mt7996_mac_fill_rx(struct mt7996_dev *dev, enum mt76_rxq_id q,
 
 		v3 = le32_to_cpu(rxv[3]);
 
+		status->chains = mphy->antenna_mask;
 		status->chain_signal[0] = to_rssi(MT_PRXV_RCPI0, v3);
 		status->chain_signal[1] = to_rssi(MT_PRXV_RCPI1, v3);
 		status->chain_signal[2] = to_rssi(MT_PRXV_RCPI2, v3);
@@ -717,10 +717,6 @@ mt7996_mac_fill_rx(struct mt7996_dev *dev, enum mt76_rxq_id q,
 		ret = mt7996_mac_fill_rx_rate(dev, status, sband, rxv, &mode, &nss, stats, mib);
 		if (ret < 0)
 			return ret;
-
-		// TODO: FIXME: 7996:  Check if this is correct, perhaps we can set bits based on chain_signal above?
-		for (i = 0; i < nss; i++)
-			status->chains |= BIT(i);
 	}
 
 	amsdu_info = FIELD_GET(MT_RXD4_NORMAL_PAYLOAD_FORMAT, rxd4);
