@@ -760,6 +760,24 @@ mt7996_sta_link_protected(struct mt7996_dev *dev, struct mt7996_sta *msta,
 	return mt76_dereference(msta->link[link_id], &dev->mt76);
 }
 
+static inline int
+mt7996_num_repeater_links(struct mt7996_phy *phy)
+{
+	return hweight64(phy->omac_mask & GENMASK_ULL(REPEATER_BSSID_MAX, REPEATER_BSSID_START));
+}
+
+static inline bool
+mt7996_has_repeater_links(struct mt7996_phy *phy)
+{
+	return mt7996_num_repeater_links(phy) > 0;
+}
+
+static inline bool
+mt7996_has_active_master_bss(struct mt7996_phy *phy)\
+{
+	return mt7996_has_repeater_links(phy) || (phy->omac_mask & BIT_ULL(MT7996_MASTER_OMAC_IDX));
+}
+
 #define mt7996_for_each_phy(dev, phy)					\
 	for (int __i = 0; __i < ARRAY_SIZE((dev)->radio_phy); __i++)	\
 		if (((phy) = (dev)->radio_phy[__i]) != NULL)
