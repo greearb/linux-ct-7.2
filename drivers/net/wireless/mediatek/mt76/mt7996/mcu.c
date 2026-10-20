@@ -1744,6 +1744,10 @@ int mt7996_mcu_add_bss_info(struct mt7996_phy *phy, struct ieee80211_vif *vif,
 			mt7996_mcu_muar_config(dev, mlink, NULL, false, enable);
 			mt7996_mcu_muar_config(dev, mlink, NULL, true, enable);
 		}
+
+		/* Disable will take down the master link if it is operating as a station */
+		if (!enable && mt7996_has_active_master_bss(phy))
+			return 0;
 	}
 
 	skb = __mt7996_mcu_alloc_bss_req(&dev->mt76, mlink,

@@ -146,18 +146,6 @@ static void mt7996_stop(struct ieee80211_hw *hw, bool suspend)
 	cancel_delayed_work_sync(&dev->scs_work);
 }
 
-static int
-mt7996_num_repeater_links(struct mt7996_phy *phy)
-{
-	return hweight64(phy->omac_mask & GENMASK_ULL(REPEATER_BSSID_MAX, REPEATER_BSSID_START));
-}
-
-static bool
-mt7996_has_repeater_links(struct mt7996_phy *phy)
-{
-	return mt7996_num_repeater_links(phy) > 0;
-}
-
 static inline int get_free_idx(u64 mask, u8 start, u8 end)
 {
 	if (~mask & GENMASK_ULL(end, start))
