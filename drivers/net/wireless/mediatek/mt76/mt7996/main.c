@@ -30,6 +30,10 @@ MODULE_PARM_DESC(debug_lvl,
 		 "0xffffffff	any/all\n"
 	);
 
+bool defer_omac1 = false;
+module_param(defer_omac1, bool, 0644);
+MODULE_PARM_DESC(defer_omac1, "Allocate OMAC 1 after all others complete.");
+
 int mt7996_run(struct mt7996_phy *phy)
 {
 	struct mt7996_dev *dev = phy->dev;
@@ -162,7 +166,10 @@ static int get_omac_idx(enum nl80211_iftype type, u64 mask)
 	case NL80211_IFTYPE_ADHOC:
 	case NL80211_IFTYPE_STATION:
 		/* prefer hw bssid slot 1-3 */
-		i = get_free_idx(mask, HW_BSSID_1, HW_BSSID_3);
+		if (defer_omac1)
+			i = get_free_idx(mask, HW_BSSID_2, HW_BSSID_3);
+		else
+			i = get_free_idx(mask, HW_BSSID_1, HW_BSSID_3);
 		if (i)
 			return i - 1;
 
@@ -181,6 +188,10 @@ static int get_omac_idx(enum nl80211_iftype type, u64 mask)
 
 		if (~mask & BIT(HW_BSSID_0))
 			return HW_BSSID_0;
+
+		/* If defer_omac1 is set, this will be caught */
+		if (~mask & BIT(HW_BSSID_1))
+			return HW_BSSID_1;
 
 		break;
 	case NL80211_IFTYPE_MONITOR:
