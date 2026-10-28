@@ -413,6 +413,7 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 	struct mt7996_sta_link *msta_link = &link->msta_link;
 	struct mt7996_phy *phy = mphy->priv;
 	struct mt7996_dev *dev = phy->dev;
+	struct mt7996_phy *ophy;
 	u8 band_idx = phy->mt76->band_idx;
 	struct mt7996_key_iter_data it = {
 		.cmd = SET_KEY,
@@ -425,8 +426,65 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 		      __func__, it.link_id, vif->addr);
 
 	if ((mvif->mt76.valid_links & BIT(link_conf->link_id)) &&
-	    (band_idx == mlink->band_idx) &&
 	    !mlink->offchannel) {
+		if (mlink->band_idx != band_idx) {
+			ophy = mt7996_band_phy(dev, mlink->band_idx);
+			ophy->omac_mask &= ~BIT_ULL(mlink->omac_idx);
+			dev->mld_idx_mask &= ~BIT_ULL(link->mld_idx);
+
+			if (mlink->omac_idx == MT7996_MASTER_OMAC_IDX && mt7996_has_repeater_links(ophy)) {
+				mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS, "%s: Transitioning to master omac\n",
+					      __func__);
+				__mt7996_configure_master_omac(ophy, true);
+			} else {
+				if (mlink->omac_idx >= REPEATER_BSSID_START &&
+				    mt7996_num_repeater_links(ophy) <= 1) {
+					mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
+						      "%s: Last repeater link removed\n", __func__);
+					mt7996_configure_master_omac(ophy, false);
+				}
+
+				mt7996_mcu_add_dev_info(ophy, vif, link_conf, mlink, false);
+			}
+
+			mt7996_mcu_add_sta(dev, link_conf, NULL, link, NULL,
+					   CONN_STATE_DISCONNECT, false);
+			mt7996_mcu_add_bss_info(ophy, vif, link_conf, mlink, msta_link, false);
+
+			idx = get_omac_idx(vif->type, phy->omac_mask);
+			if (idx < 0)
+				return -ENOSPC;
+
+			if (idx > HW_BSSID_MAX)
+				vif->netdev_features &= ~NETIF_F_HW_CSUM;
+
+			mlink->omac_idx = idx;
+			phy->omac_mask |= BIT_ULL(mlink->omac_idx);
+			mlink->band_idx = band_idx;
+			mlink->wcid->phy_idx = band_idx;
+
+			if (mlink->omac_idx < REPEATER_BSSID_START) {
+				link->mld_idx = get_own_mld_idx(dev->mld_idx_mask, false);
+			} else {
+				link->mld_idx = MT7996_FIRST_REPEATER_MLD_IDX +
+						band_idx;
+				mlink->bss_idx = mt7996_first_repeater_vif_idx(dev) +
+					         band_idx + 1;
+				ret = mt7996_configure_master_omac(phy, true);
+				if (ret)
+					return ret;
+			}
+
+			dev->mld_idx_mask |= BIT_ULL(link->mld_idx);
+
+			if (phy->mt76->chandef.chan->band != NL80211_BAND_2GHZ)
+				mlink->basic_rates_idx = MT7996_BASIC_RATES_TBL + 4;
+			else
+				mlink->basic_rates_idx = MT7996_BASIC_RATES_TBL;
+
+			mt7996_init_bitrate_mask(vif, link);
+		}
+
 		if (vif->type == NL80211_IFTYPE_AP)
 			return mt7996_mcu_mld_link_oper(dev, link_conf, link,
 							true);
