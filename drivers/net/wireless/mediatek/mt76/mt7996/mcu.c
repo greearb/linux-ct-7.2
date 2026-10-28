@@ -1746,7 +1746,9 @@ int mt7996_mcu_add_bss_info(struct mt7996_phy *phy, struct ieee80211_vif *vif,
 		}
 
 		/* Disable will take down the master link if it is operating as a station */
-		if (!enable && mt7996_has_active_master_bss(phy))
+		if ((!enable && mt7996_has_active_master_bss(phy)) ||
+		    (is_zero_ether_addr(link_conf->bssid) &&
+		     phy->omac_mask & BIT_ULL(MT7996_MASTER_OMAC_IDX)))
 			return 0;
 	}
 
