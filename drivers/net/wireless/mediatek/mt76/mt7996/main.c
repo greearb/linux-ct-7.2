@@ -404,6 +404,107 @@ mt7996_configure_master_omac(struct mt7996_phy *phy, bool enable)
 	return __mt7996_configure_master_omac(phy, enable);
 }
 
+static void mt7996_vif_link_teardown(struct mt7996_phy *phy,
+				     struct mt7996_vif_link *link,
+				     struct ieee80211_vif *vif,
+				     struct ieee80211_bss_conf *link_conf)
+{
+	struct mt7996_vif *mvif = (struct mt7996_vif *)vif->drv_priv;
+	struct mt7996_sta_link *msta_link = &link->msta_link;
+	unsigned int link_id = msta_link->wcid.link_id;
+	struct mt76_vif_link *mlink = &link->mt76;
+	struct mt7996_key_iter_data it = {
+		.cmd = SET_KEY,
+		.link_id = link_id,
+	};
+	struct mt7996_dev *dev = phy->dev;
+	int idx = msta_link->wcid.idx;
+
+	if (!link_conf)
+		link_conf = &vif->bss_conf;
+
+	if (!mlink->wcid->offchannel)
+		ieee80211_iter_keys(phy->mt76->hw, vif, mt7996_key_iter, &it);
+
+	mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
+		      "%s: band=%u, bss_idx=%u, link_id=%u, wcid=%u hw: %px\n",
+		      __func__, phy->mt76->band_idx, mlink->idx, it.link_id, idx,
+		      phy->mt76->hw);
+
+	mt7996_mcu_add_sta(dev, link_conf, NULL, link, NULL,
+			   CONN_STATE_DISCONNECT, false);
+	mt7996_mcu_add_bss_info(phy, vif, link_conf, mlink, msta_link, false);
+	/* If we need to, transition this wlan into the master for repeater stations. */
+	if (mlink->omac_idx == MT7996_MASTER_OMAC_IDX && mt7996_has_repeater_links(phy)) {
+		mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS, "%s: Transitioning to master omac\n",
+			      __func__);
+		__mt7996_configure_master_omac(phy, true);
+	} else {
+		if (mlink->omac_idx >= REPEATER_BSSID_START &&
+		    mt7996_num_repeater_links(phy) <= 1) {
+			mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
+				      "%s: Last repeater link removed\n", __func__);
+			mt7996_configure_master_omac(phy, false);
+		}
+
+		mt7996_mcu_add_dev_info(phy, vif, link_conf, mlink, false);
+	}
+
+	rcu_assign_pointer(dev->mt76.wcid[idx], NULL);
+
+	clear_bit(mlink->idx, dev->mt76.vif_mask);
+	dev->mld_idx_mask &= ~BIT_ULL(link->mld_idx);
+	phy->omac_mask &= ~BIT_ULL(mlink->omac_idx);
+	if (!mlink->wcid->offchannel)
+		mvif->mt76.valid_links &= ~BIT(link_id);
+
+	spin_lock_bh(&dev->mt76.sta_poll_lock);
+	if (!list_empty(&msta_link->wcid.poll_list))
+		list_del_init(&msta_link->wcid.poll_list);
+	spin_unlock_bh(&dev->mt76.sta_poll_lock);
+
+	mt76_wcid_cleanup(&dev->mt76, &msta_link->wcid);
+
+	if (mlink != (struct mt76_vif_link *)vif->drv_priv &&
+	    !mlink->wcid->offchannel) {
+		rcu_assign_pointer(mlink->mvif->link[link_id], NULL);
+		kfree_rcu(mlink, rcu_head);
+	}
+}
+
+static void mt7996_vif_link_free(struct mt7996_vif_link *link,
+				 struct ieee80211_vif *vif)
+{
+	unsigned int link_id = link->msta_link.wcid.link_id;
+	struct mt76_vif_link *mlink = &link->mt76;
+
+	if (mlink == (struct mt76_vif_link *)vif->drv_priv ||
+	    mlink->wcid->offchannel)
+		return;
+
+	rcu_assign_pointer(mlink->mvif->link[link_id], NULL);
+	kfree_rcu(mlink, rcu_head);
+}
+
+static int mt7996_vif_link_reuse(struct mt7996_phy *phy,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_bss_conf *link_conf,
+				 struct mt7996_vif_link *link)
+{
+	struct mt76_vif_link *mlink = &link->mt76;
+	int ret;
+
+	ret = mt7996_mcu_add_dev_info(phy, vif, link_conf, mlink, true);
+	if (ret)
+		return ret;
+
+	if (vif->type == NL80211_IFTYPE_AP && ieee80211_vif_is_mld(vif))
+		return mt7996_mcu_mld_link_oper(phy->dev, link_conf, link, true);
+
+	return mt7996_mcu_add_bss_info(phy, vif, link_conf, mlink,
+				       &link->msta_link, true);
+}
+
 int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 			struct ieee80211_bss_conf *link_conf,
 			struct mt76_vif_link *mlink)
@@ -419,6 +520,7 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 		.link_id = link_conf->link_id,
 	};
 	int mld_idx, idx, ret;
+	bool moved = false;
 
 	mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
 		      "%s:  vif_link_add called, link_id: %d vif-addr: %pM.\n",
@@ -426,28 +528,34 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 
 	if ((mvif->mt76.valid_links & BIT(link_conf->link_id)) &&
 	    !mlink->offchannel) {
-		if (vif->type == NL80211_IFTYPE_AP)
-			return mt7996_mcu_mld_link_oper(dev, link_conf, link,
-							true);
+		struct mt7996_phy *old_phy;
 
-		/* update the link address */
-		ret = mt7996_mcu_add_dev_info(phy, vif, link_conf, mlink, true);
-		if (ret)
-			return ret;
+		/* mt76_switch_vif_chanctx() sets the new chanctx only after
+		 * the link moved
+		 */
+		if (mlink->band_idx == band_idx ||
+		    mt76_vif_link_phy(mlink) != mphy)
+			return mt7996_vif_link_reuse(phy, vif, link_conf, link);
 
-		return mt7996_mcu_add_bss_info(phy, vif, link_conf, mlink,
-					       msta_link, true);
+		old_phy = __mt7996_phy(dev, msta_link->wcid.phy_idx);
+		if (old_phy) {
+			mt7996_vif_link_teardown(old_phy, link, vif, link_conf);
+			moved = true;
+		}
 	}
 
+	ret = -ENOSPC;
 	idx = get_omac_idx(vif->type, phy->omac_mask);
 	if (idx < 0)
-		return -ENOSPC;
+		goto error;
 
 	if (idx < REPEATER_BSSID_START) {
 		mlink->idx = find_first_zero_bit(dev->mt76.vif_mask,
 						 mt7996_first_repeater_vif_idx(dev));
 
 		mld_idx = get_own_mld_idx(dev->mld_idx_mask, false);
+		if (mld_idx < 0)
+			goto error;
 	} else {
 		mlink->idx = find_next_zero_bit(dev->mt76.vif_mask, MT76_MAX_VIFS,
 						mt7996_first_repeater_vif_idx(dev));
@@ -460,13 +568,13 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 	if (mlink->idx >= mt7996_max_interface_num(dev)) {
 		mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS, "%s: IF limit reached: %d/%d\n",
 			      __func__, mlink->idx, mt7996_max_interface_num(dev));
-		return -ENOSPC;
+		goto error;
 	}
 
 	if (mld_idx < 0) {
 		mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
 			      "%s: No more MLD IDs to alloc\n", __func__);
-		return -ENOSPC;
+		goto error;
 	}
 
 	if (ieee80211_vif_is_mld(vif)) {
@@ -493,7 +601,7 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 	if (ret) {
 		mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS, "%s: Add dev info failed: %d\n",
 			      __func__, ret);
-		return ret;
+		goto error;
 	}
 
 	if (ieee80211_vif_is_mld(vif)) {
@@ -570,6 +678,12 @@ int mt7996_vif_link_add(struct mt76_phy *mphy, struct ieee80211_vif *vif,
 		      __func__, link_conf->link_id, idx, mld_idx, &msta_link->wcid, band_idx);
 
 	return 0;
+
+error:
+	if (moved)
+		mt7996_vif_link_free(link, vif);
+
+	return ret;
 }
 
 static void mt7996_vif_link_destroy(struct mt7996_phy *phy,
@@ -577,67 +691,8 @@ static void mt7996_vif_link_destroy(struct mt7996_phy *phy,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_bss_conf *link_conf)
 {
-	struct mt7996_vif *mvif = (struct mt7996_vif *)vif->drv_priv;
-	struct mt7996_sta_link *msta_link = &link->msta_link;
-	unsigned int link_id = msta_link->wcid.link_id;
-	struct mt76_vif_link *mlink = &link->mt76;
-	struct mt7996_key_iter_data it = {
-		.cmd = SET_KEY,
-		.link_id = link_id,
-	};
-	struct mt7996_dev *dev = phy->dev;
-	int idx = msta_link->wcid.idx;
-
-	if (!link_conf)
-		link_conf = &vif->bss_conf;
-
-	if (!mlink->wcid->offchannel)
-		ieee80211_iter_keys(phy->mt76->hw, vif, mt7996_key_iter, &it);
-
-	mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
-		      "%s: band=%u, bss_idx=%u, link_id=%u, wcid=%u hw: %px\n",
-		      __func__, phy->mt76->band_idx, mlink->idx, it.link_id, idx,
-		      phy->mt76->hw);
-
-	mt7996_mcu_add_sta(dev, link_conf, NULL, link, NULL,
-			   CONN_STATE_DISCONNECT, false);
-	mt7996_mcu_add_bss_info(phy, vif, link_conf, mlink, msta_link, false);
-	/* If we need to, transition this wlan into the master for repeater stations. */
-	if (mlink->omac_idx == MT7996_MASTER_OMAC_IDX && mt7996_has_repeater_links(phy)) {
-		mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS, "%s: Transitioning to master omac\n",
-			      __func__);
-		__mt7996_configure_master_omac(phy, true);
-	} else {
-		if (mlink->omac_idx >= REPEATER_BSSID_START &&
-		    mt7996_num_repeater_links(phy) <= 1) {
-			mt76_link_dbg(&dev->mt76, mlink, MT76_DBG_BSS,
-				      "%s: Last repeater link removed\n", __func__);
-			mt7996_configure_master_omac(phy, false);
-		}
-
-		mt7996_mcu_add_dev_info(phy, vif, link_conf, mlink, false);
-	}
-
-	rcu_assign_pointer(dev->mt76.wcid[idx], NULL);
-
-	clear_bit(mlink->idx, dev->mt76.vif_mask);
-	dev->mld_idx_mask &= ~BIT_ULL(link->mld_idx);
-	phy->omac_mask &= ~BIT_ULL(mlink->omac_idx);
-	if (!mlink->wcid->offchannel)
-		mvif->mt76.valid_links &= ~BIT(link_id);
-
-	spin_lock_bh(&dev->mt76.sta_poll_lock);
-	if (!list_empty(&msta_link->wcid.poll_list))
-		list_del_init(&msta_link->wcid.poll_list);
-	spin_unlock_bh(&dev->mt76.sta_poll_lock);
-
-	mt76_wcid_cleanup(&dev->mt76, &msta_link->wcid);
-
-	if (mlink != (struct mt76_vif_link *)vif->drv_priv &&
-	    !mlink->wcid->offchannel) {
-		rcu_assign_pointer(mlink->mvif->link[link_id], NULL);
-		kfree_rcu(mlink, rcu_head);
-	}
+	mt7996_vif_link_teardown(phy, link, vif, link_conf);
+	mt7996_vif_link_free(link, vif);
 }
 
 void mt7996_vif_link_remove(struct mt76_phy *mphy, struct ieee80211_vif *vif,
