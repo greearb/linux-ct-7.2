@@ -1005,7 +1005,7 @@ static void ath10k_htt_rx_h_rates(struct ath10k *ar,
 	struct ieee80211_supported_band *sband;
 	u8 *rxd_msdu_payload;
 	u8 cck, rate, bw, sgi, mcs;
-	u8 nss = 0;
+	u8 nss;
 	u8 preamble = 0;
 	u8 group_id;
 	u32 info1, info2, info3;
@@ -1036,6 +1036,7 @@ static void ath10k_htt_rx_h_rates(struct ath10k *ar,
 		cck = info1 & RX_PPDU_START_INFO1_L_SIG_RATE_SELECT;
 		rate = MS(info1, RX_PPDU_START_INFO1_L_SIG_RATE);
 		rate &= ~RX_PPDU_START_RATE_FLAG;
+		nss = 1;
 
 		sband = &ar->mac.sbands[status->band];
 		status->rate_idx = ath10k_mac_hw_rate_to_idx(sband, rate, cck);
